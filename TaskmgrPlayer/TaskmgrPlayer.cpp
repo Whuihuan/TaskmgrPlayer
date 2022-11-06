@@ -12,23 +12,25 @@
 using namespace std;
 using namespace cv;
 
-namespace config{
+namespace config {
 	wstring WindowClassName;
 	wstring WindowTitle;
 	wstring ChildClassName;
+	Vec3b gridSize;
 	Vec3b colorEdge;
 	Vec3b colorDark;
 	Vec3b colorBright;
 	Vec3b colorGrid;
 	Vec3b colorFrame;
 	bool DrawGrid;
+	bool DarkMode;
 
-	vector<wstring> split(wstring str,char delimiters) { 
+	vector<wstring> split(wstring str, char delimiters) {
 		vector<wstring>res;
-		for (size_t l = 0,r = 0;r<=str.size(); ++r) {
-			if (r  ==  str.size() || str[r] == delimiters) {
+		for (size_t l = 0, r = 0; r <= str.size(); ++r) {
+			if (r == str.size() || str[r] == delimiters) {
 				res.push_back(str.substr(l, r - l));
-				l = r+1;
+				l = r + 1;
 			}
 		}
 		return res;
@@ -38,14 +40,14 @@ namespace config{
 		if (line.empty() || line[0] == L'#')//跳过注释
 			return;
 		wstring key, value;
-		vector<wstring>lsp = split(line,'=');
-		if (lsp.size() < 2) 
+		vector<wstring>lsp = split(line, '=');
+		if (lsp.size() < 2)
 			return;
-		key = lsp[0].substr(lsp[0].find_first_not_of(' '), lsp[0].find_last_not_of(' ')+1);
-		value = lsp[1].substr(lsp[1].find_first_not_of(' '), lsp[1].find_last_not_of(' ')+1);
+		key = lsp[0].substr(lsp[0].find_first_not_of(' '), lsp[0].find_last_not_of(' ') + 1);
+		value = lsp[1].substr(lsp[1].find_first_not_of(' '), lsp[1].find_last_not_of(' ') + 1);
 		if (value.size() > 1 && value.front() == '"' && value.back() == '"')
 			value = value.substr(1, value.size() - 2);
-		
+
 		if (key == L"WindowClassName")
 			WindowClassName = value;
 		else if (key == L"WindowTitle")
@@ -54,20 +56,41 @@ namespace config{
 			ChildClassName = value;
 		else if (key == L"DrawGrid")
 			DrawGrid = value == L"true";
-		else if (key.substr(0,5) == L"Color") {
+		else if (key == L"GridSize")
+			for (int i = 0; i < 2; ++i)
+				gridSize[i] = _wtoi(split(value, ',')[i].c_str());
+		else if (key == L"DarkMode")
+			DarkMode = value == L"true";
+		else if (key.substr(0, 5) == L"Color") {
 			Vec3b color;
-			for(int i=0;i<3;++i)
-				color[i] = _wtoi(split(value,',')[i].c_str());
-			if (key == L"ColorEdge")
-				colorEdge = color;
-			if (key == L"ColorDark")
-				colorDark = color;
-			if (key == L"ColorBright")
-				colorBright = color;
-			if (key == L"ColorGrid")
-				colorGrid = color;
-			if (key == L"ColorFrame")
-				colorFrame = color;
+			for (int i = 0; i < 3; ++i)
+				color[i] = _wtoi(split(value, ',')[i].c_str());
+			if (!DarkMode)
+			{
+				if (key == L"ColorEdge")
+					colorEdge = color;
+				if (key == L"ColorDark")
+					colorDark = color;
+				if (key == L"ColorBright")
+					colorBright = color;
+				if (key == L"ColorGrid")
+					colorGrid = color;
+				if (key == L"ColorFrame")
+					colorFrame = color;
+			}
+			else
+			{
+				if (key == L"ColorEdge_DarkMode")
+					colorEdge = color;
+				if (key == L"ColorDark_DarkMode")
+					colorDark = color;
+				if (key == L"ColorBright_DarkMode")
+					colorBright = color;
+				if (key == L"ColorGrid_DarkMode")
+					colorGrid = color;
+				if (key == L"ColorFrame_DarkMode")
+					colorFrame = color;
+			}
 		}
 		else {
 			wcout << L"Unknow config parameter: " << key << endl;
@@ -92,21 +115,21 @@ BOOL CALLBACK EnumChildWindowsProc(HWND hWnd, LPARAM lParam) //寻找CPU使用�
 	wchar_t WndClassName[256];
 	GetClassName(hWnd, WndClassName, 256);
 	if (WndClassName == ClassNameToEnum && (EnumHWnd == 0 || [&hWnd]() {  //短路求值+lambda真好用 ( ´ρ`)
-			RECT cRect,tRect;
-			GetWindowRect(hWnd, &tRect);
-			GetWindowRect(EnumHWnd, &cRect);
-			int tW = (tRect.right - tRect.left),
-				tH = (tRect.bottom - tRect.top),
-				cW = (cRect.right - cRect.left),
-				cH = (cRect.bottom - cRect.top);
-			return cW * cH < tW* tH;
+		RECT cRect, tRect;
+		GetWindowRect(hWnd, &tRect);
+		GetWindowRect(EnumHWnd, &cRect);
+		int tW = (tRect.right - tRect.left),
+			tH = (tRect.bottom - tRect.top),
+			cW = (cRect.right - cRect.left),
+			cH = (cRect.bottom - cRect.top);
+		return cW * cH < tW* tH;
 		}())) {
 		EnumHWnd = hWnd;
 	}
 	return true;
 }
 
-void FindWnd() 
+void FindWnd()
 {
 	wcout << L"Try find " << config::WindowTitle << L" " << config::WindowClassName << endl;
 	HWND TaskmgrHwnd = FindWindow(config::WindowClassName.c_str(), config::WindowTitle.c_str());
@@ -127,18 +150,41 @@ void Binarylize(Mat& src) {
 	inRange(bin, Scalar(128, 128, 128), Scalar(255, 255, 255), bin);
 
 	Canny(bin, edge, 80, 130);
-	int gridHeight = src.cols / 10.0;
-	int gridWidth = src.rows / 8.0;
+	int gridHeight = src.cols / config::gridSize[0];
+	int gridWidth = src.rows / config::gridSize[1];
 	int gridOffset = clock() / 1000 * 10;
 	for (int r = 0; r < src.rows; ++r) {
 		for (int c = 0; c < src.cols; ++c) {
 			src.at<Vec3b>(r, c) = ((bin.at<uchar>(r, c) == 255) ? config::colorBright : config::colorDark);
-			if(config::DrawGrid)
+			if (config::DrawGrid)
 				if (r % gridHeight == 0 || (c + gridOffset) % gridWidth == 0) src.at<Vec3b>(r, c) = config::colorGrid;
 			if (edge.at<uchar>(r, c) == 255) src.at<Vec3b>(r, c) = config::colorEdge;
 		}
 	}
 	rectangle(src, Rect{ 0,0,src.cols,src.rows }, config::colorFrame, 0.1);
+}
+
+string string_To_UTF8(const std::string& str)
+{
+	int nwLen = ::MultiByteToWideChar(CP_ACP, 0, str.c_str(), -1, NULL, 0);
+	wchar_t* pwBuf = new wchar_t[nwLen + 1];//一定要加1，不然会出现尾巴
+	ZeroMemory(pwBuf, nwLen * 2 + 2);
+
+	::MultiByteToWideChar(CP_ACP, 0, str.c_str(), str.length(), pwBuf, nwLen);
+	int nLen = ::WideCharToMultiByte(CP_UTF8, 0, pwBuf, -1, NULL, NULL, NULL, NULL);
+	char* pBuf = new char[nLen + 1];
+	ZeroMemory(pBuf, nLen + 1);
+
+	::WideCharToMultiByte(CP_UTF8, 0, pwBuf, nwLen, pBuf, nLen, NULL, NULL);
+	std::string retStr(pBuf);
+
+	delete[]pwBuf;
+	delete[]pBuf;
+
+	pwBuf = NULL;
+	pBuf = NULL;
+
+	return retStr;
 }
 
 string FindVideo() {
@@ -150,7 +196,7 @@ string FindVideo() {
 		string fileName = wfd.cFileName;
 		string type = fileName.substr(fileName.find_last_of('.') + 1);
 		if (type == "flv" || type == "mp4" || type == "avi") {
-			return fileName;
+			return string_To_UTF8(fileName);
 		}
 	}
 	return "";
@@ -170,7 +216,7 @@ void Play() {
 		return;
 	}
 	else {
-		cout << "Find video " << videoName <<".\nSplitting audio." << endl;
+		cout << "Find video " << videoName << ".\nSplitting audio." << endl;
 		system(("ffmpeg -i " + videoName + " audio.wav -y").c_str());
 	}
 	string wndName = "innerPlayer";
@@ -185,7 +231,7 @@ void Play() {
 	InvalidateRect(EnumHWnd, &rect, true);
 	UpdateWindow(EnumHWnd);
 	VideoCapture video(videoName);
-	
+
 	//_wsystem(L"cls");
 	SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), { 0,0 });
 	cout << format("%s input %dx%d@%f\n", videoName, (int)video.get(CAP_PROP_FRAME_WIDTH), (int)video.get(CAP_PROP_FRAME_HEIGHT), video.get(CAP_PROP_FPS));
@@ -207,7 +253,7 @@ void Play() {
 		cout << format("Frame %d at %.3fs. output: %dx%d ,cost %d ms.", frameCount, frameCount * frameTime / 1000.0, w, h, clock() - s);
 		for (; frameCount * frameTime > clock();)waitKey(1);
 	}
-	system("rm audio.wav");
+	system("del audio.wav");
 	destroyWindow(wndName);
 	return;
 }
@@ -216,5 +262,5 @@ int main() {
 	std::locale::global(std::locale("zh_CN.UTF-8"));
 	Play();
 	system("pause");
-	
+
 }
